@@ -27,9 +27,7 @@ impl Delta {
             },
             Delta::Delete { start: _, end: _ } => {
                 // We don't have the deleted text stored here, so we need a separate representation.
-                // For a full implementation, store the deleted text.
-                // For simplicity, we'll store the text in the Delete variant.
-                // We'll redesign to include the text.
+                // For a full implementation, store the deleted text in the Delete variant.
                 unimplemented!("Reverse Delta requires storing removed text")
             }
         }
@@ -86,7 +84,7 @@ impl History {
 
     /// Pushes a new entry. If coalescing is enabled and the last entry matches the operation,
     /// we merge the new deltas into it.
-    pub fn push_entry(pub fn push_entry(&mut self, mut entry:mut self, entry: HistoryEntry) {
+    pub fn push_entry(&mut self, entry: HistoryEntry) {
         if self.coalescing {
             if let Some(last) = self.undo_stack.last_mut() {
                 // Heuristic: if the last entry has the same name and is within a short time?
