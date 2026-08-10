@@ -3,7 +3,6 @@ use undo::{Edit, Record};
 use syntect::parsing::SyntaxSet;
 use syntect::highlighting::{Theme, ThemeSet};
 
-// ---------- Public Buffer ----------
 pub struct Buffer {
     rope: Rope,
 }
@@ -55,14 +54,12 @@ impl Buffer {
     }
 }
 
-// ---------- Undo Commands ----------
 #[derive(Debug, Clone)]
 pub enum EditCommand {
     Insert { pos: usize, text: String },
     Delete { start: usize, end: usize, deleted: String },
 }
 
-// The Edit trait is the replacement for Command in undo v0.52
 impl Edit for EditCommand {
     type Target = Buffer;
     type Output = ();
@@ -84,7 +81,6 @@ impl Edit for EditCommand {
                 let end = *pos + text.chars().count();
                 target.delete(*pos, end);
             }
-            // Fixed: include 'end' field in the pattern
             EditCommand::Delete { start, deleted, end: _ } => {
                 target.insert(*start, deleted);
             }
@@ -92,10 +88,8 @@ impl Edit for EditCommand {
     }
 }
 
-// Record now requires the Edit type as a generic parameter
 pub type EditorHistory = Record<EditCommand>;
 
-// ---------- Syntax Highlighter ----------
 pub struct SyntaxHighlighter {
     ss: SyntaxSet,
     theme: Theme,
@@ -132,10 +126,8 @@ impl SyntaxHighlighter {
         ranges
             .iter()
             .map(|(style, text)| {
-                let color = style
-                    .foreground
-                    .map(|c| (c.r as u32) << 16 | (c.g as u32) << 8 | (c.b as u32))
-                    .unwrap_or(0xFFFFFF);
+                let c = style.foreground;
+                let color = (c.r as u32) << 16 | (c.g as u32) << 8 | (c.b as u32);
                 (color, *text)
             })
             .collect()

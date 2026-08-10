@@ -13,12 +13,18 @@ use jni::Env;
 pub enum RendererError {
     #[error("AppSurface error: {0}")]
     AppSurface(#[from] anyhow::Error),
-    #[error("wgpu surface error: {0}")]
-    Surface(#[from] wgpu::SurfaceError),
-    #[error("wgpu creation error: {0}")]
-    Wgpu(#[from] wgpu::Error),
     #[error("No suitable adapter")]
     NoAdapter,
+    #[error("Surface lost or outdated")]
+    SurfaceLost,
+    #[error("Surface timeout")]
+    SurfaceTimeout,
+    #[error("Surface occluded")]
+    SurfaceOccluded,
+    #[error("wgpu request device error: {0}")]
+    RequestDevice(#[from] wgpu::RequestDeviceError),
+    #[error("wgpu surface error: {0}")]
+    CreateSurface(#[from] wgpu::CreateSurfaceError),
 }
 
 pub struct Renderer {
@@ -31,19 +37,19 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(surface_obj: JObject<'_>, env: &Env<'_>) -> Result<Self, RendererError> {
-        // Android: AppSurface::new takes raw JNI pointers
+    pub async fn new(surface_obj: JObject<'_>, env: &Env<'_>, width: u32, height: u32) -> Result<Self, RendererError> {
         let raw_env = env.get_raw();
         let raw_surface = surface_obj.as_raw();
-        let app_surface = unsafe { AppSurface::new(raw_env, raw_surface) };
+        
+        let app_surface = unsafe { 
+            AppSurface::new(raw_env as *mut jni::sys::JNIEnv, raw_surface) 
+        };
 
-        // Get the window handle for wgpu surface creation
         let window_handle = app_surface
+            .native_window
             .window_handle()
             .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
-        let size = app_surface.size();
 
-        // InstanceDescriptor requires all fields explicitly in wgpu v30
         let instance = wgpu::Instance::new(InstanceDescriptor {
             backends: Backends::VULKAN,
             flags: InstanceFlags::empty(),
@@ -54,30 +60,32 @@ impl Renderer {
 
         let surface = unsafe { instance.create_surface(&window_handle)? };
 
-        let adapter = instance
+        let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
             .await
-            .ok_or(RendererError::NoAdapter)?;
+        {
+            Some(adapter) => adapter,
+            None => return Err(RendererError::NoAdapter),
+        };
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await?;
 
-        // SurfaceConfiguration now requires color_space and desired_maximum_frame_latency
         let config = wgpu::SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8Unorm,
-            width: size.width,
-            height: size.height,
+            width,
+            height,
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
             color_space: SurfaceColorSpace::Srgb,
-            desired_maximum_frame_latency: Some(2),
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -86,8 +94,8 @@ impl Renderer {
             device,
             queue,
             config,
-            width: size.width,
-            height: size.height,
+            width,
+            height,
         })
     }
 
@@ -102,11 +110,28 @@ impl Renderer {
     }
 
     pub fn render(&mut self) -> Result<(), RendererError> {
-        // get_current_texture() now returns CurrentSurfaceTexture enum
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Error(err) => {
-                return Err(RendererError::Surface(err));
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                self.surface.configure(&self.device, &self.config);
+                frame
+            }
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                return Err(RendererError::SurfaceTimeout);
+            }
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                return Err(RendererError::SurfaceOccluded);
+            }
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                self.surface.configure(&self.device, &self.config);
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Ok(());
             }
         };
 
@@ -122,6 +147,7 @@ impl Renderer {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: Operations {
                         load: LoadOp::Clear(Color {
                             r: 0.12,
@@ -138,9 +164,7 @@ impl Renderer {
         }
 
         self.queue.submit(Some(encoder.finish()));
-
-        // present() moved to Queue in wgpu v30
-        self.queue.present(frame);
+        frame.present();
 
         Ok(())
     }

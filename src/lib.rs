@@ -9,7 +9,6 @@ use std::sync::{Mutex, OnceLock};
 
 type EditorHandle = u64;
 
-// Use OnceLock for statics that require non-const initialization
 static EDITORS: OnceLock<Mutex<HashMap<EditorHandle, EditorState>>> = OnceLock::new();
 static NEXT_HANDLE: OnceLock<Mutex<EditorHandle>> = OnceLock::new();
 
@@ -35,7 +34,7 @@ pub struct EditorState {
 
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
-    mut env: Env,
+    env: Env,
     _class: JClass,
     surface: JObject,
     width: jint,
@@ -45,8 +44,8 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
 
-    let result: Result<jlong, Box<dyn std::error::Error>> = (|| {
-        let renderer = pollster::block_on(renderer::Renderer::new(surface, &env))?;
+    let result: Result<jlong, renderer::RendererError> = (|| {
+        let mut renderer = pollster::block_on(renderer::Renderer::new(surface, &env, width as u32, height as u32))?;
         renderer.resize(width as u32, height as u32);
 
         let state = EditorState {
@@ -114,7 +113,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                                 end: state.cursor_pos,
                                 deleted,
                             };
-                            // Record::edit(target, edit)
                             state.history.edit(&mut state.buffer, cmd);
                             state.cursor_pos -= 1;
                         }
@@ -165,11 +163,9 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     }
                 }
                 26 if ctrl => {
-                    // Record::undo(target)
                     state.history.undo(&mut state.buffer);
                 }
                 25 if ctrl => {
-                    // Record::redo(target)
                     state.history.redo(&mut state.buffer);
                 }
                 _ => {
