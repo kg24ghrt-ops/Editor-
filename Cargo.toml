@@ -4,32 +4,34 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]  # produces .so for Android
+crate-type = ["cdylib"]
 
 [dependencies]
-# Core text
+# Core data structure
 ropey = "1.6"
 
-# Syntax highlighting (lightweight, regex-based)
+# Undo/redo (replaces add-e)
+undo = "0.52"
+
+# Syntax highlighting (lightweight)
 synoptic = "0.4"
 
-# Undo/redo
-add-e = "0.4"
-
-# GPU rendering
+# GPU and Android surface handling
 wgpu = { version = "0.20", features = ["vulkan"] }
 raw-window-handle = "0.6"
-
-# Android NDK bindings
+app-surface = "1.13"
 ndk = "0.8"
 ndk-sys = "0.5"
+
+# JNI bindings
 jni = { version = "0.21", default-features = false }
 
-# Surface abstraction (critical for Android)
-app-surface = "1.13"  # from jinleili/wgpu-in-app[reference:3]
+# Async helpers for wgpu init
+pollster = "0.3"
 
-# Utilities
-pollster = "0.3"      # block_on for async wgpu init
+# Error handling
 thiserror = "1.0"
+
+# Logging on Android
 log = "0.4"
 android_logger = "0.13"

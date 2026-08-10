@@ -1,36 +1,48 @@
-// src/renderer.rs
-use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureView};
+use wgpu::{
+    Device, Queue, Surface, SurfaceConfiguration, TextureView, TextureUsages,
+    SurfaceError, RenderPass, CommandEncoderDescriptor, LoadOp, Operations,
+    RenderPassDescriptor, Color, TextureViewDescriptor,
+};
 use app_surface::AppSurface;
 use raw_window_handle::HasRawWindowHandle;
-use std::sync::Arc;
+use jni::objects::JObject;
+use jni::JNIEnv;
+
+#[derive(Debug, thiserror::Error)]
+pub enum RendererError {
+    #[error("AppSurface error: {0}")]
+    AppSurface(#[from] app_surface::Error),
+    #[error("wgpu surface error: {0}")]
+    Surface(#[from] SurfaceError),
+    #[error("wgpu creation error: {0}")]
+    Wgpu(#[from] wgpu::Error),
+    #[error("No suitable adapter")]
+    NoAdapter,
+}
 
 pub struct Renderer {
     surface: Surface<'static>,
     device: Device,
     queue: Queue,
     config: SurfaceConfiguration,
-    // Text rendering state will go here (glyph atlas, shaders, etc.)
+    width: u32,
+    height: u32,
 }
 
 impl Renderer {
-    /// Create a wgpu renderer from an Android Surface JNI object.
-    /// `surface_obj` is a JNI reference to android.view.Surface.
-    pub async fn new(surface_obj: jni::objects::JObject<'_>, env: &jni::JNIEnv<'_>) -> Result<Self, RendererError> {
-        // 1. Wrap the Java Surface into an AppSurface
+    pub async fn new(surface_obj: JObject<'_>, env: &JNIEnv<'_>) -> Result<Self, RendererError> {
+        // Wrap the Java Surface
         let app_surface = AppSurface::from_surface(surface_obj, env)?;
-        
-        // 2. Get the raw window handle (implements HasRawWindowHandle)
         let raw_handle = app_surface.raw_window_handle();
-        
-        // 3. Create wgpu instance and surface
+        let size = app_surface.size();
+
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..Default::default()
         });
-        
+
         let surface = unsafe { instance.create_surface(raw_handle)? };
-        
-        // 4. Pick adapter and device
+
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -39,15 +51,13 @@ impl Renderer {
             })
             .await
             .ok_or(RendererError::NoAdapter)?;
-            
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await?;
-        
-        // 5. Configure the surface
-        let size = app_surface.size();
+
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: TextureUsages::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8Unorm,
             width: size.width,
             height: size.height,
@@ -56,34 +66,59 @@ impl Renderer {
             view_formats: vec![],
         };
         surface.configure(&device, &config);
-        
-        Ok(Self { surface, device, queue, config })
+
+        Ok(Self {
+            surface,
+            device,
+            queue,
+            config,
+            width: size.width,
+            height: size.height,
+        })
     }
-    
+
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.config.width = width;
-        self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        if width > 0 && height > 0 {
+            self.width = width;
+            self.height = height;
+            self.config.width = width;
+            self.config.height = height;
+            self.surface.configure(&self.device, &self.config);
+        }
     }
-    
+
     pub fn render(&mut self) -> Result<(), RendererError> {
         let frame = self.surface.get_current_texture()?;
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        // ... rendering commands go here (clear, draw text, draw cursor, etc.)
-        
-        self.queue.submit(None);
+        let view = frame.texture.create_view(&TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor { label: None });
+
+        {
+            let _ = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color {
+                            r: 0.12,
+                            g: 0.12,
+                            b: 0.14,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
+        }
+
+        self.queue.submit(Some(encoder.finish()));
         frame.present();
+
         Ok(())
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum RendererError {
-    #[error("AppSurface error: {0}")]
-    AppSurface(#[from] app_surface::Error),
-    #[error("wgpu error: {0}")]
-    Wgpu(#[from] wgpu::Error),
-    #[error("No suitable GPU adapter found")]
-    NoAdapter,
 }

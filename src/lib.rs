@@ -1,15 +1,14 @@
-// src/lib.rs
 mod editor;
 mod renderer;
 
 use jni::objects::{JClass, JObject};
 use jni::sys::{jlong, jint};
 use jni::JNIEnv;
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
-// Global registry of editor instances (handle -> EditorState)
 type EditorHandle = u64;
+
 static EDITORS: Mutex<HashMap<EditorHandle, EditorState>> = Mutex::new(HashMap::new());
 static NEXT_HANDLE: Mutex<EditorHandle> = Mutex::new(1);
 
@@ -19,35 +18,32 @@ pub struct EditorState {
     highlighter: editor::Highlighter,
     renderer: renderer::Renderer,
     cursor_pos: usize,
-    scroll_line: usize,   // first visible line
+    scroll_line: usize,
     viewport_lines: usize,
     line_height: f32,
     font_size: f32,
 }
 
-/// JNI entry point: create an editor instance.
-/// Called from Kotlin when SurfaceView is created.
+/// Creates an editor instance and returns a handle.
 #[no_mangle]
-pub extern "system" fn Java_com_yourapp_EditorBridge_createEditor(
+pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
     env: JNIEnv,
     _class: JClass,
     surface: JObject,
     width: jint,
     height: jint,
 ) -> jlong {
-    // Initialize Android logger
     android_logger::init_once(
-        android_logger::Config::default().with_max_level(log::LevelFilter::Info)
+        android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
-    
+
     let result: Result<jlong, Box<dyn std::error::Error>> = try {
-        // Build the renderer (async, but we block since we're in JNI)
         let renderer = pollster::block_on(renderer::Renderer::new(surface, &env))?;
         renderer.resize(width as u32, height as u32);
-        
+
         let state = EditorState {
             buffer: editor::Buffer::from_str("Welcome to Mega Editor!\nType something..."),
-            history: editor::EditorHistory::new(),
+            history: editor::EditorHistory::default(),
             highlighter: editor::Highlighter::new(),
             renderer,
             cursor_pos: 0,
@@ -56,20 +52,20 @@ pub extern "system" fn Java_com_yourapp_EditorBridge_createEditor(
             line_height: 20.0,
             font_size: 16.0,
         };
-        
+
         let mut map = EDITORS.lock().unwrap();
         let handle = *NEXT_HANDLE.lock().unwrap();
         *NEXT_HANDLE.lock().unwrap() += 1;
         map.insert(handle, state);
         handle as jlong
     };
-    
+
     result.unwrap_or(0)
 }
 
-/// JNI: render a frame
+/// Renders one frame.
 #[no_mangle]
-pub extern "system" fn Java_com_yourapp_EditorBridge_renderFrame(
+pub extern "system" fn Java_com_yourapp_editor_EditorBridge_renderFrame(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -81,46 +77,65 @@ pub extern "system" fn Java_com_yourapp_EditorBridge_renderFrame(
     }
 }
 
-/// JNI: handle a key event (called from Kotlin's onKeyDown/onKeyUp)
+/// Handles a key event.
 #[no_mangle]
-pub extern "system" fn Java_com_yourapp_EditorBridge_onKeyEvent(
+pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
     key_code: jint,
-    is_pressed: bool,
-    is_ctrl: bool,
+    is_pressed: jint,
+    is_ctrl: jint,
 ) {
-    if !is_pressed { return; }
-    
+    if is_pressed == 0 {
+        return;
+    }
+    let ctrl = is_ctrl != 0;
+
     if let Ok(mut map) = EDITORS.lock() {
         if let Some(state) = map.get_mut(&(handle as EditorHandle)) {
             use editor::EditCommand;
-            
+
             match key_code {
-                67 => { // Backspace
+                67 => {
+                    // Backspace
                     if state.cursor_pos > 0 {
                         let start = state.cursor_pos - 1;
                         if let Some(ch) = state.buffer.char_at(start) {
                             let deleted = ch.to_string();
-                            let cmd = EditCommand::Delete { start, end: state.cursor_pos, deleted };
-                            state.history.execute(&mut state.buffer, cmd);
+                            let cmd = EditCommand::Delete {
+                                start,
+                                end: state.cursor_pos,
+                                deleted,
+                            };
+                            let _ = state.history.apply(cmd);
                             state.cursor_pos -= 1;
                         }
                     }
                 }
-                66 => { // Enter
-                    let cmd = EditCommand::Insert { pos: state.cursor_pos, text: "\n".to_string() };
-                    state.history.execute(&mut state.buffer, cmd);
+                66 => {
+                    // Enter
+                    let cmd = EditCommand::Insert {
+                        pos: state.cursor_pos,
+                        text: "\n".to_string(),
+                    };
+                    let _ = state.history.apply(cmd);
                     state.cursor_pos += 1;
                 }
-                21 => { // Left arrow
-                    if state.cursor_pos > 0 { state.cursor_pos -= 1; }
+                21 => {
+                    // Left arrow
+                    if state.cursor_pos > 0 {
+                        state.cursor_pos -= 1;
+                    }
                 }
-                22 => { // Right arrow
-                    if state.cursor_pos < state.buffer.len() { state.cursor_pos += 1; }
+                22 => {
+                    // Right arrow
+                    if state.cursor_pos < state.buffer.len() {
+                        state.cursor_pos += 1;
+                    }
                 }
-                19 => { // Up arrow
+                19 => {
+                    // Up arrow
                     let line = state.buffer.char_to_line(state.cursor_pos);
                     if line > 0 {
                         let start = state.buffer.line_to_char(line - 1);
@@ -131,7 +146,8 @@ pub extern "system" fn Java_com_yourapp_EditorBridge_onKeyEvent(
                         state.cursor_pos = new_start + (col.min(new_end - new_start));
                     }
                 }
-                20 => { // Down arrow
+                20 => {
+                    // Down arrow
                     let line = state.buffer.char_to_line(state.cursor_pos);
                     if line + 1 < state.buffer.line_count() {
                         let start = state.buffer.line_to_char(line);
@@ -146,19 +162,24 @@ pub extern "system" fn Java_com_yourapp_EditorBridge_onKeyEvent(
                         state.cursor_pos = new_start + (col.min(new_end - new_start));
                     }
                 }
-                26 => { // 'Z' with Ctrl = Undo
-                    if is_ctrl { state.history.undo(&mut state.buffer); }
+                26 if ctrl => {
+                    // Ctrl+Z → Undo
+                    let _ = state.history.undo();
                 }
-                25 => { // 'Y' with Ctrl = Redo
-                    if is_ctrl { state.history.redo(&mut state.buffer); }
+                25 if ctrl => {
+                    // Ctrl+Y → Redo
+                    let _ = state.history.redo();
                 }
                 _ => {
-                    // Insert printable character
+                    // Printable characters (ASCII only for demo)
                     if let Some(ch) = char::from_u32(key_code as u32) {
                         if ch.is_ascii_graphic() || ch == ' ' {
                             let text = ch.to_string();
-                            let cmd = EditCommand::Insert { pos: state.cursor_pos, text };
-                            state.history.execute(&mut state.buffer, cmd);
+                            let cmd = EditCommand::Insert {
+                                pos: state.cursor_pos,
+                                text,
+                            };
+                            let _ = state.history.apply(cmd);
                             state.cursor_pos += 1;
                         }
                     }
@@ -168,9 +189,9 @@ pub extern "system" fn Java_com_yourapp_EditorBridge_onKeyEvent(
     }
 }
 
-/// JNI: destroy editor and free GPU resources
+/// Destroys the editor and frees GPU resources.
 #[no_mangle]
-pub extern "system" fn Java_com_yourapp_EditorBridge_destroyEditor(
+pub extern "system" fn Java_com_yourapp_editor_EditorBridge_destroyEditor(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
