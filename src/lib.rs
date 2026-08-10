@@ -5,12 +5,21 @@ use jni::objects::{JClass, JObject};
 use jni::sys::{jlong, jint};
 use jni::Env;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 type EditorHandle = u64;
 
-static EDITORS: Mutex<HashMap<EditorHandle, EditorState>> = Mutex::new(HashMap::new());
-static NEXT_HANDLE: Mutex<EditorHandle> = Mutex::new(1);
+// Use OnceLock for statics that require non-const initialization
+static EDITORS: OnceLock<Mutex<HashMap<EditorHandle, EditorState>>> = OnceLock::new();
+static NEXT_HANDLE: OnceLock<Mutex<EditorHandle>> = OnceLock::new();
+
+fn get_editors() -> &'static Mutex<HashMap<EditorHandle, EditorState>> {
+    EDITORS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_next_handle() -> &'static Mutex<EditorHandle> {
+    NEXT_HANDLE.get_or_init(|| Mutex::new(1))
+}
 
 pub struct EditorState {
     pub buffer: editor::Buffer,
@@ -52,9 +61,10 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
             font_size: 16.0,
         };
 
-        let mut map = EDITORS.lock().unwrap();
-        let handle = *NEXT_HANDLE.lock().unwrap();
-        *NEXT_HANDLE.lock().unwrap() += 1;
+        let mut map = get_editors().lock().unwrap();
+        let mut next = get_next_handle().lock().unwrap();
+        let handle = *next;
+        *next += 1;
         map.insert(handle, state);
         Ok(handle as jlong)
     })();
@@ -68,7 +78,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_renderFrame(
     _class: JClass,
     handle: jlong,
 ) {
-    if let Ok(mut map) = EDITORS.lock() {
+    if let Ok(mut map) = get_editors().lock() {
         if let Some(state) = map.get_mut(&(handle as EditorHandle)) {
             let _ = state.renderer.render();
         }
@@ -89,7 +99,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
     }
     let ctrl = is_ctrl != 0;
 
-    if let Ok(mut map) = EDITORS.lock() {
+    if let Ok(mut map) = get_editors().lock() {
         if let Some(state) = map.get_mut(&(handle as EditorHandle)) {
             use editor::EditCommand;
 
@@ -104,6 +114,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                                 end: state.cursor_pos,
                                 deleted,
                             };
+                            // Record::edit(target, edit)
                             state.history.edit(&mut state.buffer, cmd);
                             state.cursor_pos -= 1;
                         }
@@ -154,9 +165,11 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     }
                 }
                 26 if ctrl => {
+                    // Record::undo(target)
                     state.history.undo(&mut state.buffer);
                 }
                 25 if ctrl => {
+                    // Record::redo(target)
                     state.history.redo(&mut state.buffer);
                 }
                 _ => {
@@ -183,7 +196,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_destroyEditor(
     _class: JClass,
     handle: jlong,
 ) {
-    if let Ok(mut map) = EDITORS.lock() {
+    if let Ok(mut map) = get_editors().lock() {
         map.remove(&(handle as EditorHandle));
     }
 }

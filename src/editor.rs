@@ -62,6 +62,7 @@ pub enum EditCommand {
     Delete { start: usize, end: usize, deleted: String },
 }
 
+// The Edit trait is the replacement for Command in undo v0.52
 impl Edit for EditCommand {
     type Target = Buffer;
     type Output = ();
@@ -83,14 +84,16 @@ impl Edit for EditCommand {
                 let end = *pos + text.chars().count();
                 target.delete(*pos, end);
             }
-            EditCommand::Delete { start, deleted } => {
+            // Fixed: include 'end' field in the pattern
+            EditCommand::Delete { start, deleted, end: _ } => {
                 target.insert(*start, deleted);
             }
         }
     }
 }
 
-pub type EditorHistory = Record;
+// Record now requires the Edit type as a generic parameter
+pub type EditorHistory = Record<EditCommand>;
 
 // ---------- Syntax Highlighter ----------
 pub struct SyntaxHighlighter {

@@ -1,7 +1,8 @@
 use wgpu::{
     Device, Queue, Surface, SurfaceConfiguration, TextureUsages,
     CommandEncoderDescriptor, LoadOp, Operations, RenderPassDescriptor,
-    Color, TextureViewDescriptor,
+    Color, TextureViewDescriptor, InstanceDescriptor, Backends, InstanceFlags,
+    MemoryBudgetThresholds, BackendOptions, SurfaceColorSpace,
 };
 use app_surface::AppSurface;
 use raw_window_handle::HasWindowHandle;
@@ -31,17 +32,24 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn new(surface_obj: JObject<'_>, env: &Env<'_>) -> Result<Self, RendererError> {
-        let app_surface = AppSurface::from_surface(surface_obj, env)
-            .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
+        // Android: AppSurface::new takes raw JNI pointers
+        let raw_env = env.get_raw();
+        let raw_surface = surface_obj.as_raw();
+        let app_surface = unsafe { AppSurface::new(raw_env, raw_surface) };
 
+        // Get the window handle for wgpu surface creation
         let window_handle = app_surface
             .window_handle()
             .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
         let size = app_surface.size();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
-            ..Default::default()
+        // InstanceDescriptor requires all fields explicitly in wgpu v30
+        let instance = wgpu::Instance::new(InstanceDescriptor {
+            backends: Backends::VULKAN,
+            flags: InstanceFlags::empty(),
+            memory_budget_thresholds: MemoryBudgetThresholds::default(),
+            backend_options: BackendOptions::default(),
+            display: None,
         });
 
         let surface = unsafe { instance.create_surface(&window_handle)? };
@@ -59,6 +67,7 @@ impl Renderer {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await?;
 
+        // SurfaceConfiguration now requires color_space and desired_maximum_frame_latency
         let config = wgpu::SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8Unorm,
@@ -67,6 +76,8 @@ impl Renderer {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
+            color_space: SurfaceColorSpace::Srgb,
+            desired_maximum_frame_latency: Some(2),
         };
         surface.configure(&device, &config);
 
@@ -91,8 +102,7 @@ impl Renderer {
     }
 
     pub fn render(&mut self) -> Result<(), RendererError> {
-        // In wgpu v30, get_current_texture() returns CurrentSurfaceTexture enum
-        // which can be a Success or an Error variant.
+        // get_current_texture() now returns CurrentSurfaceTexture enum
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Error(err) => {
@@ -128,7 +138,9 @@ impl Renderer {
         }
 
         self.queue.submit(Some(encoder.finish()));
-        frame.present();
+
+        // present() moved to Queue in wgpu v30
+        self.queue.present(frame);
 
         Ok(())
     }
