@@ -24,7 +24,6 @@ pub struct EditorState {
     pub font_size: f32,
 }
 
-/// Creates an editor instance and returns a handle.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
     mut env: Env,
@@ -37,7 +36,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
 
-    // Use a standard Result block instead of unstable `try`
     let result: Result<jlong, Box<dyn std::error::Error>> = (|| {
         let renderer = pollster::block_on(renderer::Renderer::new(surface, &env))?;
         renderer.resize(width as u32, height as u32);
@@ -64,7 +62,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
     result.unwrap_or(0)
 }
 
-/// Renders one frame.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_renderFrame(
     _env: Env,
@@ -78,7 +75,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_renderFrame(
     }
 }
 
-/// Handles a key event.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
     _env: Env,
@@ -99,7 +95,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
 
             match key_code {
                 67 => {
-                    // Backspace
                     if state.cursor_pos > 0 {
                         let start = state.cursor_pos - 1;
                         if let Some(ch) = state.buffer.char_at(start) {
@@ -115,7 +110,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     }
                 }
                 66 => {
-                    // Enter
                     let cmd = EditCommand::Insert {
                         pos: state.cursor_pos,
                         text: "\n".to_string(),
@@ -124,19 +118,16 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     state.cursor_pos += 1;
                 }
                 21 => {
-                    // Left arrow
                     if state.cursor_pos > 0 {
                         state.cursor_pos -= 1;
                     }
                 }
                 22 => {
-                    // Right arrow
                     if state.cursor_pos < state.buffer.len() {
                         state.cursor_pos += 1;
                     }
                 }
                 19 => {
-                    // Up arrow
                     let line = state.buffer.char_to_line(state.cursor_pos);
                     if line > 0 {
                         let start = state.buffer.line_to_char(line - 1);
@@ -148,7 +139,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     }
                 }
                 20 => {
-                    // Down arrow
                     let line = state.buffer.char_to_line(state.cursor_pos);
                     if line + 1 < state.buffer.line_count() {
                         let start = state.buffer.line_to_char(line);
@@ -164,15 +154,12 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     }
                 }
                 26 if ctrl => {
-                    // Ctrl+Z → Undo
                     let _ = state.history.undo();
                 }
                 25 if ctrl => {
-                    // Ctrl+Y → Redo
                     let _ = state.history.redo();
                 }
                 _ => {
-                    // Printable characters (ASCII only for demo)
                     if let Some(ch) = char::from_u32(key_code as u32) {
                         if ch.is_ascii_graphic() || ch == ' ' {
                             let text = ch.to_string();
@@ -190,7 +177,6 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
     }
 }
 
-/// Destroys the editor and frees GPU resources.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_destroyEditor(
     _env: Env,

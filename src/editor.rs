@@ -1,6 +1,7 @@
 use ropey::Rope;
-use undo::{Command, Record};
-use syntect::parsing::{SyntaxSet, SyntaxReference};
+// 使用完整路径导入，避免与 std::process::Command 冲突
+use undo::{Command as UndoCommand, Record};
+use syntect::parsing::SyntaxSet;
 use syntect::highlighting::{Theme, ThemeSet, Style};
 
 // ---------- Public Buffer ----------
@@ -46,7 +47,7 @@ pub enum EditCommand {
     Delete { start: usize, end: usize, deleted: String },
 }
 
-impl Command<Buffer> for EditCommand {
+impl UndoCommand<Buffer> for EditCommand {
     type Error = std::convert::Infallible;
 
     fn apply(&mut self, buf: &mut Buffer) -> Result<(), Self::Error> {
@@ -73,7 +74,7 @@ impl Command<Buffer> for EditCommand {
 
 pub type EditorHistory = Record<Buffer>;
 
-// ---------- Syntax Highlighter (using syntect) ----------
+// ---------- Syntax Highlighter ----------
 pub struct SyntaxHighlighter {
     ss: SyntaxSet,
     theme: Theme,
@@ -97,7 +98,6 @@ impl SyntaxHighlighter {
 
     pub fn highlight_line(&self, line: &str) -> Vec<(u32, &str)> {
         use syntect::easy::HighlightLines;
-        use syntect::util::as_24_bit_terminal_escaped;
 
         let syntax = self
             .ss
@@ -105,7 +105,7 @@ impl SyntaxHighlighter {
             .or_else(|| self.ss.find_syntax_by_extension(&self.lang))
             .unwrap_or_else(|| self.ss.find_syntax_plain_text());
 
-        let mut h = syntect::easy::HighlightLines::new(syntax, &self.theme);
+        let mut h = HighlightLines::new(syntax, &self.theme);
         let ranges = h.highlight_line(line, &self.ss).unwrap_or_else(|_| vec![]);
 
         ranges

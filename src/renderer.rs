@@ -4,27 +4,21 @@ use wgpu::{
     Color, TextureViewDescriptor,
 };
 use app_surface::AppSurface;
-use raw_window_handle::HasRawWindowHandle;
+// 使用新的 HasWindowHandle trait（替代已弃用的 HasRawWindowHandle）
+use raw_window_handle::HasWindowHandle;
 use jni::objects::JObject;
 use jni::Env;
 
-// Custom error type since app-surface doesn't export one
 #[derive(Debug, thiserror::Error)]
 pub enum RendererError {
     #[error("AppSurface error: {0}")]
-    AppSurface(String),
+    AppSurface(#[from] anyhow::Error),  // app-surface 使用 anyhow::Error
     #[error("wgpu surface error: {0}")]
     Surface(#[from] wgpu::SurfaceError),
     #[error("wgpu creation error: {0}")]
     Wgpu(#[from] wgpu::Error),
     #[error("No suitable adapter")]
     NoAdapter,
-}
-
-impl From<app_surface::Error> for RendererError {
-    fn from(e: app_surface::Error) -> Self {
-        RendererError::AppSurface(e.to_string())
-    }
 }
 
 pub struct Renderer {
@@ -38,8 +32,12 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn new(surface_obj: JObject<'_>, env: &Env<'_>) -> Result<Self, RendererError> {
-        let app_surface = AppSurface::from_surface(surface_obj, env)?;
-        let raw_handle = app_surface.raw_window_handle();
+        let app_surface = AppSurface::from_surface(surface_obj, env)
+            .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
+        
+        // 使用新的 window_handle() 方法
+        let window_handle = app_surface.window_handle()
+            .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
         let size = app_surface.size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -47,7 +45,7 @@ impl Renderer {
             ..Default::default()
         });
 
-        let surface = unsafe { instance.create_surface(raw_handle)? };
+        let surface = unsafe { instance.create_surface(&window_handle)? };
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {

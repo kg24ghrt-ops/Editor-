@@ -8,45 +8,22 @@ resolver = "2"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Core text data structure
 ropey = "1.6"
-
-# Undo/redo (command pattern)
 undo = "0.52"
-
-# Syntax highlighting — CORRECTED feature set
-# Removed invalid "assets" feature, added required regex backend
 syntect = { version = "5.2", default-features = false, features = [
-    "default-onig",    # Enables Oniguruma regex engine (C-based, fastest)
-    "parsing",         # Required for SyntaxSet
-    "default-themes",  # Loads default color themes
-    "default-syntaxes" # Loads default language syntax definitions
+    "default-onig",
+    "parsing",
+    "default-themes",
+    "default-syntaxes"
 ] }
-
-# GPU rendering
 wgpu = { version = "30", features = ["vulkan"] }
-
-# Android surface → wgpu::Surface adapter
-# DISABLE default features to avoid pulling winit on Android
 app-surface = { version = "1.13", default-features = false }
-
-# Android NDK bindings
 ndk = "0.9"
 ndk-sys = "0.6"
-
-# JNI bindings
 jni = "0.22"
-
-# Async helpers for wgpu init
 pollster = "0.3"
-
-# Error handling
 thiserror = "1.0"
 anyhow = "1.0"
-
-# Logging on Android
 log = "0.4"
 android_logger = "0.13"
-
-# Raw window handle trait
 raw-window-handle = "0.6"
