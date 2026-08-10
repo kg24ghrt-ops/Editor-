@@ -14,8 +14,14 @@ ropey = "1.6"
 # Undo/redo (command pattern)
 undo = "0.52"
 
-# Syntax highlighting — switched to syntect for stability
-syntect = { version = "5.2", default-features = false, features = ["default-themes", "parsing", "assets"] }
+# Syntax highlighting — CORRECTED feature set
+# Removed invalid "assets" feature, added required regex backend
+syntect = { version = "5.2", default-features = false, features = [
+    "default-onig",    # Enables Oniguruma regex engine (C-based, fastest)
+    "parsing",         # Required for SyntaxSet
+    "default-themes",  # Loads default color themes
+    "default-syntaxes" # Loads default language syntax definitions
+] }
 
 # GPU rendering
 wgpu = { version = "30", features = ["vulkan"] }
@@ -28,7 +34,7 @@ app-surface = { version = "1.13", default-features = false }
 ndk = "0.9"
 ndk-sys = "0.6"
 
-# JNI bindings — use 0.22 with the new Env/EnvUnowned API
+# JNI bindings
 jni = "0.22"
 
 # Async helpers for wgpu init
