@@ -1,0 +1,95 @@
+name: Build Rust Native Library (.so)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  NDK_VERSION: r28c
+  API_LEVEL: 34
+
+jobs:
+  build-rust:
+    name: Compile Rust → .so for Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          cmdline-tools-version: 14742923
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platforms;android-34"
+          sdkmanager "build-tools;34.0.0"
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1.5.0
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+          local-cache: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: |
+            aarch64-linux-android
+            armv7-linux-androideabi
+            x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2
+
+      - name: Compile Rust → .so libraries
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk \
+            --target aarch64-linux-android \
+            --target armv7-linux-androideabi \
+            --target x86_64-linux-android \
+            --platform ${{ env.API_LEVEL }} \
+            build --release
+
+      # 🔍 Debug: List the generated .so files so we can see them
+      - name: List generated .so files
+        run: |
+          echo "=== ARM64 ==="
+          ls -la target/aarch64-linux-android/release/*.so || echo "No .so files found"
+          echo "=== ARMv7 ==="
+          ls -la target/armv7-linux-androideabi/release/*.so || echo "No .so files found"
+          echo "=== x86_64 ==="
+          ls -la target/x86_64-linux-android/release/*.so || echo "No .so files found"
+
+      # 📦 Upload the compiled .so files so you can download them
+      - name: Upload .so libraries
+        uses: actions/upload-artifact@v4.6.2          # ✅ CORRECTED VERSION
+        with:
+          name: rust-native-libs
+          path: |
+            target/aarch64-linux-android/release/*.so
+            target/armv7-linux-androideabi/release/*.so
+            target/x86_64-linux-android/release/*.so
+          retention-days: 30
+          compression-level: 6
+          if-no-files-found: error                    # ✅ Ensures you don't get an empty artifact
