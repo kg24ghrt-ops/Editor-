@@ -3,7 +3,7 @@ mod renderer;
 
 use jni::objects::{JClass, JObject};
 use jni::sys::{jlong, jint};
-use jni::JNIEnv;
+use jni::Env;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -13,21 +13,21 @@ static EDITORS: Mutex<HashMap<EditorHandle, EditorState>> = Mutex::new(HashMap::
 static NEXT_HANDLE: Mutex<EditorHandle> = Mutex::new(1);
 
 pub struct EditorState {
-    buffer: editor::Buffer,
-    history: editor::EditorHistory,
-    highlighter: editor::Highlighter,
-    renderer: renderer::Renderer,
-    cursor_pos: usize,
-    scroll_line: usize,
-    viewport_lines: usize,
-    line_height: f32,
-    font_size: f32,
+    pub buffer: editor::Buffer,
+    pub history: editor::EditorHistory,
+    pub highlighter: editor::SyntaxHighlighter,
+    pub renderer: renderer::Renderer,
+    pub cursor_pos: usize,
+    pub scroll_line: usize,
+    pub viewport_lines: usize,
+    pub line_height: f32,
+    pub font_size: f32,
 }
 
 /// Creates an editor instance and returns a handle.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
-    env: JNIEnv,
+    mut env: Env,
     _class: JClass,
     surface: JObject,
     width: jint,
@@ -37,14 +37,15 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
 
-    let result: Result<jlong, Box<dyn std::error::Error>> = try {
+    // Use a standard Result block instead of unstable `try`
+    let result: Result<jlong, Box<dyn std::error::Error>> = (|| {
         let renderer = pollster::block_on(renderer::Renderer::new(surface, &env))?;
         renderer.resize(width as u32, height as u32);
 
         let state = EditorState {
             buffer: editor::Buffer::from_str("Welcome to Mega Editor!\nType something..."),
             history: editor::EditorHistory::default(),
-            highlighter: editor::Highlighter::new(),
+            highlighter: editor::SyntaxHighlighter::new(),
             renderer,
             cursor_pos: 0,
             scroll_line: 0,
@@ -57,8 +58,8 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
         let handle = *NEXT_HANDLE.lock().unwrap();
         *NEXT_HANDLE.lock().unwrap() += 1;
         map.insert(handle, state);
-        handle as jlong
-    };
+        Ok(handle as jlong)
+    })();
 
     result.unwrap_or(0)
 }
@@ -66,7 +67,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
 /// Renders one frame.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_renderFrame(
-    _env: JNIEnv,
+    _env: Env,
     _class: JClass,
     handle: jlong,
 ) {
@@ -80,7 +81,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_renderFrame(
 /// Handles a key event.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
-    _env: JNIEnv,
+    _env: Env,
     _class: JClass,
     handle: jlong,
     key_code: jint,
@@ -192,7 +193,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
 /// Destroys the editor and frees GPU resources.
 #[no_mangle]
 pub extern "system" fn Java_com_yourapp_editor_EditorBridge_destroyEditor(
-    _env: JNIEnv,
+    _env: Env,
     _class: JClass,
     handle: jlong,
 ) {

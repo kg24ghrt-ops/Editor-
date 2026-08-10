@@ -1,23 +1,30 @@
 use wgpu::{
-    Device, Queue, Surface, SurfaceConfiguration, TextureView, TextureUsages,
-    SurfaceError, RenderPass, CommandEncoderDescriptor, LoadOp, Operations,
-    RenderPassDescriptor, Color, TextureViewDescriptor,
+    Device, Queue, Surface, SurfaceConfiguration, TextureUsages,
+    CommandEncoderDescriptor, LoadOp, Operations, RenderPassDescriptor,
+    Color, TextureViewDescriptor,
 };
 use app_surface::AppSurface;
 use raw_window_handle::HasRawWindowHandle;
 use jni::objects::JObject;
-use jni::JNIEnv;
+use jni::Env;
 
+// Custom error type since app-surface doesn't export one
 #[derive(Debug, thiserror::Error)]
 pub enum RendererError {
     #[error("AppSurface error: {0}")]
-    AppSurface(#[from] app_surface::Error),
+    AppSurface(String),
     #[error("wgpu surface error: {0}")]
-    Surface(#[from] SurfaceError),
+    Surface(#[from] wgpu::SurfaceError),
     #[error("wgpu creation error: {0}")]
     Wgpu(#[from] wgpu::Error),
     #[error("No suitable adapter")]
     NoAdapter,
+}
+
+impl From<app_surface::Error> for RendererError {
+    fn from(e: app_surface::Error) -> Self {
+        RendererError::AppSurface(e.to_string())
+    }
 }
 
 pub struct Renderer {
@@ -30,8 +37,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(surface_obj: JObject<'_>, env: &JNIEnv<'_>) -> Result<Self, RendererError> {
-        // Wrap the Java Surface
+    pub async fn new(surface_obj: JObject<'_>, env: &Env<'_>) -> Result<Self, RendererError> {
         let app_surface = AppSurface::from_surface(surface_obj, env)?;
         let raw_handle = app_surface.raw_window_handle();
         let size = app_surface.size();

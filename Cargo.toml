@@ -2,7 +2,7 @@
 name = "mega_editor_android"
 version = "0.1.0"
 edition = "2021"
-resolver = "2"  # <-- Add this to avoid dependency resolution issues
+resolver = "2"
 
 [lib]
 crate-type = ["cdylib"]
@@ -14,21 +14,21 @@ ropey = "1.6"
 # Undo/redo (command pattern)
 undo = "0.52"
 
-# Syntax highlighting — use the 2.x series (NOT 0.4)
-synoptic = "2"
+# Syntax highlighting — switched to syntect for stability
+syntect = { version = "5.2", default-features = false, features = ["default-themes", "parsing", "assets"] }
 
 # GPU rendering
-wgpu = "30"
+wgpu = { version = "30", features = ["vulkan"] }
 
 # Android surface → wgpu::Surface adapter
-# DISABLE default features to avoid pulling in `winit` on Android
+# DISABLE default features to avoid pulling winit on Android
 app-surface = { version = "1.13", default-features = false }
 
 # Android NDK bindings
-ndk = "0.9"       # <-- Updated to latest
-ndk-sys = "0.6"   # <-- Updated to latest
+ndk = "0.9"
+ndk-sys = "0.6"
 
-# JNI bindings
+# JNI bindings — use 0.22 with the new Env/EnvUnowned API
 jni = "0.22"
 
 # Async helpers for wgpu init
@@ -36,10 +36,11 @@ pollster = "0.3"
 
 # Error handling
 thiserror = "1.0"
+anyhow = "1.0"
 
 # Logging on Android
 log = "0.4"
 android_logger = "0.13"
 
-# Raw window handle trait (required by wgpu + app-surface)
+# Raw window handle trait
 raw-window-handle = "0.6"
