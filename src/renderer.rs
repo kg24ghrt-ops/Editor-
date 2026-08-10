@@ -4,7 +4,6 @@ use wgpu::{
     Color, TextureViewDescriptor,
 };
 use app_surface::AppSurface;
-// 使用新的 HasWindowHandle trait（替代已弃用的 HasRawWindowHandle）
 use raw_window_handle::HasWindowHandle;
 use jni::objects::JObject;
 use jni::Env;
@@ -12,7 +11,7 @@ use jni::Env;
 #[derive(Debug, thiserror::Error)]
 pub enum RendererError {
     #[error("AppSurface error: {0}")]
-    AppSurface(#[from] anyhow::Error),  // app-surface 使用 anyhow::Error
+    AppSurface(#[from] anyhow::Error),
     #[error("wgpu surface error: {0}")]
     Surface(#[from] wgpu::SurfaceError),
     #[error("wgpu creation error: {0}")]
@@ -34,9 +33,9 @@ impl Renderer {
     pub async fn new(surface_obj: JObject<'_>, env: &Env<'_>) -> Result<Self, RendererError> {
         let app_surface = AppSurface::from_surface(surface_obj, env)
             .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
-        
-        // 使用新的 window_handle() 方法
-        let window_handle = app_surface.window_handle()
+
+        let window_handle = app_surface
+            .window_handle()
             .map_err(|e| RendererError::AppSurface(anyhow::anyhow!(e)))?;
         let size = app_surface.size();
 
@@ -92,7 +91,15 @@ impl Renderer {
     }
 
     pub fn render(&mut self) -> Result<(), RendererError> {
-        let frame = self.surface.get_current_texture()?;
+        // In wgpu v30, get_current_texture() returns CurrentSurfaceTexture enum
+        // which can be a Success or an Error variant.
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Error(err) => {
+                return Err(RendererError::Surface(err));
+            }
+        };
+
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
         let mut encoder = self

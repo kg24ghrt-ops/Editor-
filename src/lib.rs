@@ -42,7 +42,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_createEditor(
 
         let state = EditorState {
             buffer: editor::Buffer::from_str("Welcome to Mega Editor!\nType something..."),
-            history: editor::EditorHistory::default(),
+            history: editor::EditorHistory::new(),
             highlighter: editor::SyntaxHighlighter::new(),
             renderer,
             cursor_pos: 0,
@@ -104,7 +104,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                                 end: state.cursor_pos,
                                 deleted,
                             };
-                            let _ = state.history.apply(cmd);
+                            state.history.edit(&mut state.buffer, cmd);
                             state.cursor_pos -= 1;
                         }
                     }
@@ -114,7 +114,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                         pos: state.cursor_pos,
                         text: "\n".to_string(),
                     };
-                    let _ = state.history.apply(cmd);
+                    state.history.edit(&mut state.buffer, cmd);
                     state.cursor_pos += 1;
                 }
                 21 => {
@@ -154,10 +154,10 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                     }
                 }
                 26 if ctrl => {
-                    let _ = state.history.undo();
+                    state.history.undo(&mut state.buffer);
                 }
                 25 if ctrl => {
-                    let _ = state.history.redo();
+                    state.history.redo(&mut state.buffer);
                 }
                 _ => {
                     if let Some(ch) = char::from_u32(key_code as u32) {
@@ -167,7 +167,7 @@ pub extern "system" fn Java_com_yourapp_editor_EditorBridge_onKeyEvent(
                                 pos: state.cursor_pos,
                                 text,
                             };
-                            let _ = state.history.apply(cmd);
+                            state.history.edit(&mut state.buffer, cmd);
                             state.cursor_pos += 1;
                         }
                     }

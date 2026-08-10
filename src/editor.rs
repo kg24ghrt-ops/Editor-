@@ -1,8 +1,7 @@
 use ropey::Rope;
-// 使用完整路径导入，避免与 std::process::Command 冲突
-use undo::{Command as UndoCommand, Record};
+use undo::{Edit, Record};
 use syntect::parsing::SyntaxSet;
-use syntect::highlighting::{Theme, ThemeSet, Style};
+use syntect::highlighting::{Theme, ThemeSet};
 
 // ---------- Public Buffer ----------
 pub struct Buffer {
@@ -10,11 +9,21 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new() -> Self { Self { rope: Rope::new() } }
-    pub fn from_str(s: &str) -> Self { Self { rope: Rope::from(s) } }
-    pub fn len(&self) -> usize { self.rope.len_chars() }
-    pub fn char_at(&self, pos: usize) -> Option<char> { self.rope.get_char(pos) }
-    pub fn text(&self) -> String { self.rope.to_string() }
+    pub fn new() -> Self {
+        Self { rope: Rope::new() }
+    }
+    pub fn from_str(s: &str) -> Self {
+        Self { rope: Rope::from(s) }
+    }
+    pub fn len(&self) -> usize {
+        self.rope.len_chars()
+    }
+    pub fn char_at(&self, pos: usize) -> Option<char> {
+        self.rope.get_char(pos)
+    }
+    pub fn text(&self) -> String {
+        self.rope.to_string()
+    }
     pub fn insert(&mut self, pos: usize, text: &str) -> (usize, usize) {
         let start = pos;
         self.rope.insert(pos, text);
@@ -26,7 +35,9 @@ impl Buffer {
         self.rope.remove(start..end);
         deleted
     }
-    pub fn line_count(&self) -> usize { self.rope.len_lines() }
+    pub fn line_count(&self) -> usize {
+        self.rope.len_lines()
+    }
     pub fn line_text(&self, idx: usize) -> String {
         let start = self.rope.line_to_char(idx);
         let end = if idx + 1 < self.rope.len_lines() {
@@ -36,8 +47,12 @@ impl Buffer {
         };
         self.rope.slice(start..end).to_string()
     }
-    pub fn char_to_line(&self, pos: usize) -> usize { self.rope.char_to_line(pos) }
-    pub fn line_to_char(&self, line: usize) -> usize { self.rope.line_to_char(line) }
+    pub fn char_to_line(&self, pos: usize) -> usize {
+        self.rope.char_to_line(pos)
+    }
+    pub fn line_to_char(&self, line: usize) -> usize {
+        self.rope.line_to_char(line)
+    }
 }
 
 // ---------- Undo Commands ----------
@@ -47,32 +62,35 @@ pub enum EditCommand {
     Delete { start: usize, end: usize, deleted: String },
 }
 
-impl UndoCommand<Buffer> for EditCommand {
-    type Error = std::convert::Infallible;
+impl Edit for EditCommand {
+    type Target = Buffer;
+    type Output = ();
 
-    fn apply(&mut self, buf: &mut Buffer) -> Result<(), Self::Error> {
+    fn edit(&mut self, target: &mut Self::Target) -> Self::Output {
         match self {
-            EditCommand::Insert { pos, text } => { buf.insert(*pos, text); }
-            EditCommand::Delete { start, end, .. } => { buf.delete(*start, *end); }
+            EditCommand::Insert { pos, text } => {
+                target.insert(*pos, text);
+            }
+            EditCommand::Delete { start, end, .. } => {
+                target.delete(*start, *end);
+            }
         }
-        Ok(())
     }
 
-    fn undo(&mut self, buf: &mut Buffer) -> Result<(), Self::Error> {
+    fn undo(&mut self, target: &mut Self::Target) -> Self::Output {
         match self {
             EditCommand::Insert { pos, text } => {
                 let end = *pos + text.chars().count();
-                buf.delete(*pos, end);
+                target.delete(*pos, end);
             }
             EditCommand::Delete { start, deleted } => {
-                buf.insert(*start, deleted);
+                target.insert(*start, deleted);
             }
         }
-        Ok(())
     }
 }
 
-pub type EditorHistory = Record<Buffer>;
+pub type EditorHistory = Record;
 
 // ---------- Syntax Highlighter ----------
 pub struct SyntaxHighlighter {
@@ -111,7 +129,8 @@ impl SyntaxHighlighter {
         ranges
             .iter()
             .map(|(style, text)| {
-                let color = style.foreground
+                let color = style
+                    .foreground
                     .map(|c| (c.r as u32) << 16 | (c.g as u32) << 8 | (c.b as u32))
                     .unwrap_or(0xFFFFFF);
                 (color, *text)
