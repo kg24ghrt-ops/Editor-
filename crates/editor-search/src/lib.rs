@@ -2,7 +2,6 @@
 
 use editor_core::EditorBuffer;
 use regex::bytes::Regex;
-use ropey::RopeSlice;
 use std::ops::Range;
 
 /// Search result: byte range and char range.
