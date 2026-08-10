@@ -7,24 +7,27 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Core data structure
+# Core text data structure
 ropey = "1.6"
 
-# Undo/redo (replaces add-e)
-undo = "0.52"
+# Undo/redo (command pattern) — latest stable
+undo = "0.52"                                                          # [reference:2]
 
-# Syntax highlighting (lightweight)
-synoptic = "0.4"
+# Syntax highlighting — use the 2.x series (NOT 0.4)
+synoptic = "2"                                                         # [reference:3]
 
-# GPU and Android surface handling
-wgpu = { version = "0.20", features = ["vulkan"] }
-raw-window-handle = "0.6"
-app-surface = "1.13"
+# GPU rendering
+wgpu = "30"                                                            # [reference:4]
+
+# Android surface → wgpu::Surface adapter
+app-surface = "1.13"                                                   # [reference:5]
+
+# Android NDK bindings
 ndk = "0.8"
 ndk-sys = "0.5"
 
-# JNI bindings
-jni = { version = "0.21", default-features = false }
+# JNI bindings — latest stable
+jni = "0.22"                                                           # [reference:6]
 
 # Async helpers for wgpu init
 pollster = "0.3"
@@ -35,3 +38,6 @@ thiserror = "1.0"
 # Logging on Android
 log = "0.4"
 android_logger = "0.13"
+
+# Raw window handle trait (required by wgpu + app-surface)
+raw-window-handle = "0.6"
