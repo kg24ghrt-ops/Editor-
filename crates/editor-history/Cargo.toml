@@ -1,0 +1,7 @@
+[package]
+name = "editor-history"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+editor-core = { path = "../editor-core" }

@@ -1,29 +1,23 @@
-[package]
-name = "mega_editor_android"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "crates/editor-core",
+    "crates/editor-history",
+    "crates/editor-highlight",
+    "crates/editor-search",
+    "crates/editor-fold",
+    "crates/editor-ffi",
+]
 resolver = "2"
 
-[lib]
-crate-type = ["cdylib"]
+[workspace.dependencies]
+ropey = "1.5.0"
+tree-sitter = "0.20.10"
+tree-sitter-highlight = "0.20.1"
+regex = "1.10.0"
+crossbeam-channel = "0.5.0"
 
-[dependencies]
-ropey = "1.6"
-undo = "0.52"
-syntect = { version = "5.2", default-features = false, features = [
-    "default-onig",
-    "parsing",
-    "default-themes",
-    "default-syntaxes"
-] }
-wgpu = { version = "30", features = ["vulkan"] }
-app-surface = { version = "1.13", default-features = false }
-ndk = "0.9"
-ndk-sys = "0.6"
-jni = "0.22"
-pollster = "0.3"
-thiserror = "1.0"
-anyhow = "1.0"
-log = "0.4"
-android_logger = "0.13"
-raw-window-handle = "0.6"
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <you@example.com>"]
+license = "MIT OR Apache-2.0"

@@ -1,0 +1,15 @@
+[package]
+name = "editor-ffi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+editor-core = { path = "../editor-core" }
+editor-history = { path = "../editor-history" }
+editor-highlight = { path = "../editor-highlight" }
+editor-search = { path = "../editor-search" }
+editor-fold = { path = "../editor-fold" }
+crossbeam-channel.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "editor-highlight"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+editor-core = { path = "../editor-core" }
+tree-sitter.workspace = true
+tree-sitter-highlight.workspace = true
+
+[features]
+default = []
+# Add language grammars as optional dependencies.
+rust = ["dep:tree-sitter-rust"]
+# tree-sitter-rust = "0.20"  # add to workspace dependencies if needed

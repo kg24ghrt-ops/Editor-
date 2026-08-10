@@ -1,0 +1,8 @@
+[package]
+name = "editor-fold"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+editor-core = { path = "../editor-core" }
+tree-sitter.workspace = true
