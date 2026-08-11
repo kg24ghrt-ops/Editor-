@@ -58,7 +58,7 @@ impl SyntaxHighlighter {
     pub fn highlight(&self, buf: &EditorBuffer) -> Vec<HighlightEvent> {
         if let Some(config) = &self.config {
             let source = buf.rope().to_string();
-            let highlighter = Highlighter::new();
+            let mut highlighter = Highlighter::new();
             // highlighter.highlight() returns Result<impl Iterator<Item = Result<HighlightEvent, Error>>, Error>
             let events: Vec<HighlightEvent> = highlighter
                 .highlight(config, source.as_bytes(), None, |_lang| None)
