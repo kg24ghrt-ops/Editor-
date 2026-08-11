@@ -30,7 +30,7 @@ impl Delta {
                     text: text.clone(),
                 }
             }
-            Delta::Delete { start, end, text } => {
+            Delta::Delete { start, end: _, text } => {
                 Delta::Insert {
                     start: *start,
                     text: text.clone(),
