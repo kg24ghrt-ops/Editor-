@@ -58,7 +58,7 @@ pub extern "C" fn editor_create(initial_text: *const c_char) -> *mut EditorHandl
             highlighter: None,
         });
         Box::into_raw(handle) as *mut c_void
-    })
+    }) as *mut EditorHandle
 }
 
 /// Destroy the editor and free its memory.
