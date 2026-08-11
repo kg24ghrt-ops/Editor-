@@ -35,7 +35,7 @@ fn collect_fold_regions(node: &Node, buf: &EditorBuffer, out: &mut Vec<FoldRegio
         if end_char > start_char + 1 {
             let label = if kind == "function_definition" {
                 // Try to find the function name.
-                let mut name = "function".to_string();
+                let name = "function".to_string();
                 // In a real impl, walk children.
                 name
             } else {

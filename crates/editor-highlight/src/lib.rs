@@ -1,7 +1,7 @@
 //! Incremental syntax highlighting using tree‑sitter.
 
 use editor_core::EditorBuffer;
-use tree_sitter::{Parser, Tree, InputEdit};
+use tree_sitter::{Parser, Tree};
 use tree_sitter_highlight::{Highlighter, HighlightConfiguration, HighlightEvent};
 use std::sync::Arc;
 
@@ -40,7 +40,7 @@ impl SyntaxHighlighter {
         let source = rope.to_string(); // FIXME: materializes whole buffer; for demo only.
         let old_tree = self.tree.take();
 
-        let new_tree = if let Some(mut old_tree) = old_tree {
+        let new_tree = if let Some(_old_tree) = old_tree {
             // If we have a tree from a previous version, we need to apply edits.
             // For simplicity, we just reparse from scratch.
             // A real implementation would maintain a map of edits and call tree.edit().
@@ -54,14 +54,16 @@ impl SyntaxHighlighter {
         self.tree.as_ref().unwrap()
     }
 
-    /// Perform highlighting. Returns an iterator over HighlightEvent.
+    /// Perform highlighting. Returns a vector of HighlightEvents.
     pub fn highlight(&self, buf: &EditorBuffer) -> Vec<HighlightEvent> {
         if let Some(config) = &self.config {
             let source = buf.rope().to_string();
             let highlighter = Highlighter::new();
-            let events: Vec<_> = highlighter
+            // highlighter.highlight() returns Result<impl Iterator<Item = Result<HighlightEvent, Error>>, Error>
+            let events: Vec<HighlightEvent> = highlighter
                 .highlight(config, source.as_bytes(), None, |_lang| None)
-                .unwrap()
+                .unwrap()                    // Unwrap the outer Result
+                .filter_map(Result::ok)      // Keep only successful events
                 .collect();
             events
         } else {
