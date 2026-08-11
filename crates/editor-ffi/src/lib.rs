@@ -57,7 +57,7 @@ pub extern "C" fn editor_create(initial_text: *const c_char) -> *mut EditorHandl
             history,
             highlighter: None,
         });
-        Box::into_raw(handle) as *mut EditorHandle
+        Box::into_raw(handle) as *mut c_void
     })
 }
 
