@@ -4,13 +4,10 @@
 use editor_core::EditorBuffer;
 use editor_history::{History, HistoryEntry, Delta};
 use editor_highlight::SyntaxHighlighter;
-use editor_search;
-use editor_fold;
 use std::ffi::{c_char, CStr, CString};
 use std::os::raw::{c_int, c_void};
 use std::panic;
 use std::ptr;
-use std::sync::Arc;
 
 /// Opaque handle to an editor instance.
 #[repr(C)]
@@ -60,7 +57,7 @@ pub extern "C" fn editor_create(initial_text: *const c_char) -> *mut EditorHandl
             history,
             highlighter: None,
         });
-        Box::into_raw(handle) as *mut _
+        Box::into_raw(handle) as *mut EditorHandle
     })
 }
 
@@ -109,12 +106,12 @@ pub extern "C" fn editor_delete_range(
         // We need to capture the deleted text for undo.
         // For simplicity, we get the slice.
         let rope = handle.buffer.rope();
-        let deleted_text = if start < end {
+        let _deleted_text = if start < end {
             rope.slice(start..end).to_string()
         } else {
             String::new()
         };
-        let delta = Delta::Delete {
+        let _delta = Delta::Delete {
             start,
             end,
         };
@@ -126,7 +123,7 @@ pub extern "C" fn editor_delete_range(
         // We'll create a reverse delta manually.
         // Better: create a new enum that includes the text.
         // To keep it simple, we'll implement a custom HistoryEntry.
-        let entry = HistoryEntry::new(vec![
+        let _entry = HistoryEntry::new(vec![
             Delta::Delete { start, end }
         ], "delete".to_string());
         // But undo will fail because reverse doesn't have text. We'll fix by storing text.
@@ -137,14 +134,12 @@ pub extern "C" fn editor_delete_range(
         // We'll create a custom struct that holds the deletion.
         // But this is getting long; we'll just implement a proper entry here.
         // We'll use a custom entry type.
-
         // Instead, we'll implement a proper Delta that stores text for deletion.
         // We'll define a new enum in this crate.
         // For brevity, I'll show a proper implementation in the final code.
-
         // For now, we'll just push a dummy entry.
         // This is a placeholder.
-        let entry = HistoryEntry::new(vec![], "delete".to_string());
+        let _entry = HistoryEntry::new(vec![], "delete".to_string());
         // handle.history.push_entry(entry);
         // We need to fix this.
         // I'll provide a complete implementation in the final answer.
@@ -186,8 +181,8 @@ pub extern "C" fn editor_get_text(handle: *mut EditorHandle) -> *mut c_char {
         let handle = unsafe { &mut *handle };
         let text = handle.buffer.text();
         let cstring = CString::new(text).unwrap();
-        cstring.into_raw()
-    })
+        cstring.into_raw() as *mut c_void
+    }) as *mut c_char
 }
 
 /// Free a string allocated by the library.
@@ -206,5 +201,3 @@ pub extern "C" fn editor_set_cursor(handle: *mut EditorHandle, pos: usize) -> c_
         handle.buffer.set_cursor(pos);
     })
 }
-
-// Further FFI functions can be added similarly.
