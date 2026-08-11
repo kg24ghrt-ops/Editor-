@@ -6,7 +6,8 @@ use editor_core::EditorBuffer;
 #[derive(Clone, Debug)]
 pub enum Delta {
     Insert { start: usize, text: String },
-    Delete { start: usize, end: usize },
+    /// Delete now stores the removed text, so undo can re-insert it.
+    Delete { start: usize, end: usize, text: String },
 }
 
 impl Delta {
@@ -14,21 +15,26 @@ impl Delta {
     pub fn apply(&self, buf: &mut EditorBuffer) {
         match self {
             Delta::Insert { start, text } => buf.insert_text(*start, text),
-            Delta::Delete { start, end } => buf.delete_range(*start, *end),
+            Delta::Delete { start, end, text: _ } => buf.delete_range(*start, *end),
         }
     }
 
     /// Reverses the delta (for undo).
     pub fn reverse(&self) -> Self {
         match self {
-            Delta::Insert { start, text } => Delta::Delete {
-                start: *start,
-                end: *start + text.chars().count(),
-            },
-            Delta::Delete { start: _, end: _ } => {
-                // We don't have the deleted text stored here, so we need a separate representation.
-                // For a full implementation, store the deleted text in the Delete variant.
-                unimplemented!("Reverse Delta requires storing removed text")
+            Delta::Insert { start, text } => {
+                let end = *start + text.chars().count();
+                Delta::Delete {
+                    start: *start,
+                    end,
+                    text: text.clone(),
+                }
+            }
+            Delta::Delete { start, end, text } => {
+                Delta::Insert {
+                    start: *start,
+                    text: text.clone(),
+                }
             }
         }
     }
@@ -139,17 +145,36 @@ mod tests {
     fn undo_redo_simple() {
         let mut buf = EditorBuffer::new("hello");
         let mut history = History::new(10);
-
         let insert = Delta::Insert {
             start: 5,
             text: " world".into(),
         };
-        history.push_entry(HistoryEntry::new(vec![insert], "typing"));
+        let entry = HistoryEntry::new(vec![insert], "typing");
+        entry.apply_forward(&mut buf);
+        history.push_entry(entry);
         assert_eq!(buf.text(), "hello world");
-
         assert!(history.undo(&mut buf));
         assert_eq!(buf.text(), "hello");
         assert!(history.redo(&mut buf));
         assert_eq!(buf.text(), "hello world");
+    }
+
+    #[test]
+    fn undo_delete() {
+        let mut buf = EditorBuffer::new("hello world");
+        let mut history = History::new(10);
+        let delete = Delta::Delete {
+            start: 5,
+            end: 11,
+            text: " world".into(),
+        };
+        let entry = HistoryEntry::new(vec![delete], "delete");
+        entry.apply_forward(&mut buf);
+        history.push_entry(entry);
+        assert_eq!(buf.text(), "hello");
+        assert!(history.undo(&mut buf));
+        assert_eq!(buf.text(), "hello world");
+        assert!(history.redo(&mut buf));
+        assert_eq!(buf.text(), "hello");
     }
 }
