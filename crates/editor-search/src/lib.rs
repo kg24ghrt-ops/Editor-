@@ -2,7 +2,6 @@
 
 use editor_core::EditorBuffer;
 use regex::bytes::Regex;
-use ropey::Rope;
 use std::ops::Range;
 
 /// Search result: byte range and char range.
@@ -30,15 +29,15 @@ pub fn search_buffer(buf: &EditorBuffer, pattern: &str) -> Vec<SearchMatch> {
             let end_byte = byte_offset + mat.end();
             let start_char = rope.byte_to_char(start_byte);
             let end_char = rope.byte_to_char(end_byte);
-            let matched_text = String::from_utf8_lossy(&chunk_bytes[mat.start()..mat.end()]).to_string();
+            let matched_text =
+                String::from_utf8_lossy(&chunk_bytes[mat.start()..mat.end()]).to_string();
             results.push(SearchMatch {
                 char_range: start_char..end_char,
                 text: matched_text,
             });
         }
-        byte_offset += chunk.len_bytes();
+        byte_offset += chunk.len();
     }
-
     results
 }
 
@@ -52,19 +51,28 @@ pub fn search_range(buf: &EditorBuffer, pattern: &str, range: Range<usize>) -> V
     let end_byte = rope.char_to_byte(range.end);
 
     let mut results = Vec::new();
-    let mut byte_offset = start_byte;
 
-    // Iterate over chunks within the byte range.
-    for (chunk, chunk_start_byte, chunk_end_byte) in rope.chunks_at_byte(start_byte) {
+    // Get the chunks iterator starting at the desired byte position.
+    // chunks_at_byte returns (Chunks, chunk_start_byte, chunk_end_byte, line_index)
+    let (mut chunks, mut chunk_start_byte, mut _chunk_end_byte, _line_idx) =
+        rope.chunks_at_byte(start_byte);
+
+    // Iterate over chunks from the starting position.
+    while let Some(chunk) = chunks.next() {
         if chunk_start_byte >= end_byte {
             break;
         }
+
         let chunk_bytes = chunk.as_bytes();
         // Limit search to the portion of the chunk that's within the range.
         let local_start = 0;
-        let local_end = (end_byte - chunk_start_byte).min(chunk.len_bytes());
+        let local_end = (end_byte - chunk_start_byte).min(chunk.len());
 
+        // Safety: chunk is valid UTF-8, so slicing by bytes is safe as long as
+        // the indices are on UTF-8 character boundaries.
+        // We're only using this slice for regex search on bytes, not for string conversion directly.
         let chunk_slice = &chunk_bytes[local_start..local_end];
+
         for mat in re.find_iter(chunk_slice) {
             let abs_start_byte = chunk_start_byte + mat.start();
             let abs_end_byte = chunk_start_byte + mat.end();
@@ -73,13 +81,15 @@ pub fn search_range(buf: &EditorBuffer, pattern: &str, range: Range<usize>) -> V
             }
             let start_char = rope.byte_to_char(abs_start_byte);
             let end_char = rope.byte_to_char(abs_end_byte);
-            let matched_text = String::from_utf8_lossy(&chunk_slice[mat.start()..mat.end()]).to_string();
+            let matched_text =
+                String::from_utf8_lossy(&chunk_slice[mat.start()..mat.end()]).to_string();
             results.push(SearchMatch {
                 char_range: start_char..end_char,
                 text: matched_text,
             });
         }
-        byte_offset += chunk.len_bytes();
+
+        chunk_start_byte += chunk.len();
     }
 
     results
