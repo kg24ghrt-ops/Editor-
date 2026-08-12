@@ -1,5 +1,4 @@
 //! Fold regions derived from the syntax tree.
-
 use editor_core::EditorBuffer;
 use tree_sitter::{Node, Query, QueryCursor, Tree};
 use std::ops::Range;
@@ -31,11 +30,15 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
 
     let query = Query::new(language, query_source).unwrap();
     let mut cursor = QueryCursor::new();
-    let matches = cursor.matches(&query, root, source);
 
+    // FIX: Get source text from the buffer as bytes
+    let source = buf.rope().to_string();
+    let source_bytes = source.as_bytes();
+
+    let matches = cursor.matches(&query, root, source_bytes);
     let rope = buf.rope();
-    let mut regions = Vec::new();
 
+    let mut regions = Vec::new();
     for mat in matches {
         for capture in mat.captures {
             let node = capture.node;
@@ -62,7 +65,7 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
     regions.sort_by_key(|r| r.range.start);
     let mut filtered = Vec::new();
     for region in regions {
-        if let Some(last) = filtered.last_mut() {
+        if let Some(last) = filtered.last() {
             if region.range.start < last.range.end {
                 // Overlap: keep the one that starts earlier (outermost).
                 continue;
@@ -79,7 +82,11 @@ fn extract_function_name(node: &Node) -> String {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier" {
-            return child.utf8_text(node.language().unwrap()).unwrap_or("function").to_string();
+            // FIX: node.language() returns Language directly, no unwrap needed
+            return child
+                .utf8_text(&node.language())
+                .unwrap_or("function")
+                .to_string();
         }
         if child.kind() == "function" {
             // Some languages use "function" keyword, then name.
