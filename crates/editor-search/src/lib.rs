@@ -2,6 +2,7 @@
 
 use editor_core::EditorBuffer;
 use regex::bytes::Regex;
+use ropey::Rope;
 use std::ops::Range;
 
 /// Search result: byte range and char range.
@@ -18,45 +19,69 @@ pub fn search_buffer(buf: &EditorBuffer, pattern: &str) -> Vec<SearchMatch> {
     let re = Regex::new(pattern).expect("Invalid regex");
     let rope = buf.rope();
     let mut results = Vec::new();
+    let mut byte_offset = 0;
 
-    // We need to iterate over the rope chunks and combine them.
-    // For simplicity, we convert the whole rope to a string (but we could do streaming).
-    // A real implementation would use the chunk iterator and handle cross-chunk matches.
-    let text = rope.to_string();
-    let bytes = text.as_bytes();
-    for mat in re.find_iter(bytes) {
-        let start_byte = mat.start();
-        let end_byte = mat.end();
-        // Convert byte offsets to char offsets.
-        let start_char = rope.byte_to_char(start_byte);
-        let end_char = rope.byte_to_char(end_byte);
-        let matched_text = String::from_utf8_lossy(&bytes[start_byte..end_byte]).to_string();
-        results.push(SearchMatch {
-            char_range: start_char..end_char,
-            text: matched_text,
-        });
+    // Iterate over chunks.
+    for chunk in rope.chunks() {
+        let chunk_bytes = chunk.as_bytes();
+        // Search within this chunk.
+        for mat in re.find_iter(chunk_bytes) {
+            let start_byte = byte_offset + mat.start();
+            let end_byte = byte_offset + mat.end();
+            let start_char = rope.byte_to_char(start_byte);
+            let end_char = rope.byte_to_char(end_byte);
+            let matched_text = String::from_utf8_lossy(&chunk_bytes[mat.start()..mat.end()]).to_string();
+            results.push(SearchMatch {
+                char_range: start_char..end_char,
+                text: matched_text,
+            });
+        }
+        byte_offset += chunk.len_bytes();
     }
+
     results
 }
 
 /// Search only in a specific range (character indices).
 pub fn search_range(buf: &EditorBuffer, pattern: &str, range: Range<usize>) -> Vec<SearchMatch> {
-    let slice = buf.rope().slice(range.clone());
-    let text = slice.to_string();
     let re = Regex::new(pattern).expect("Invalid regex");
+    let rope = buf.rope();
+
+    // We need to search only within the byte range corresponding to the char range.
+    let start_byte = rope.char_to_byte(range.start);
+    let end_byte = rope.char_to_byte(range.end);
+
     let mut results = Vec::new();
-    for mat in re.find_iter(text.as_bytes()) {
-        let start_byte = mat.start();
-        let end_byte = mat.end();
-        // Since slice starts at range.start, we adjust.
-        let start_char = range.start + slice.byte_to_char(start_byte);
-        let end_char = range.start + slice.byte_to_char(end_byte);
-        let matched_text = String::from_utf8_lossy(&text.as_bytes()[start_byte..end_byte]).to_string();
-        results.push(SearchMatch {
-            char_range: start_char..end_char,
-            text: matched_text,
-        });
+    let mut byte_offset = start_byte;
+
+    // Iterate over chunks within the byte range.
+    for (chunk, chunk_start_byte, chunk_end_byte) in rope.chunks_at_byte(start_byte) {
+        if chunk_start_byte >= end_byte {
+            break;
+        }
+        let chunk_bytes = chunk.as_bytes();
+        // Limit search to the portion of the chunk that's within the range.
+        let local_start = 0;
+        let local_end = (end_byte - chunk_start_byte).min(chunk.len_bytes());
+
+        let chunk_slice = &chunk_bytes[local_start..local_end];
+        for mat in re.find_iter(chunk_slice) {
+            let abs_start_byte = chunk_start_byte + mat.start();
+            let abs_end_byte = chunk_start_byte + mat.end();
+            if abs_end_byte > end_byte {
+                break;
+            }
+            let start_char = rope.byte_to_char(abs_start_byte);
+            let end_char = rope.byte_to_char(abs_end_byte);
+            let matched_text = String::from_utf8_lossy(&chunk_slice[mat.start()..mat.end()]).to_string();
+            results.push(SearchMatch {
+                char_range: start_char..end_char,
+                text: matched_text,
+            });
+        }
+        byte_offset += chunk.len_bytes();
     }
+
     results
 }
 
@@ -69,6 +94,15 @@ mod tests {
         let buf = EditorBuffer::new("hello world");
         let matches = search_buffer(&buf, r"l+");
         assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].text, "ll");
+        assert_eq!(matches[0].char_range, 2..4);
+    }
+
+    #[test]
+    fn search_range() {
+        let buf = EditorBuffer::new("hello world");
+        let matches = search_range(&buf, r"l+", 0..5);
+        assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].text, "ll");
         assert_eq!(matches[0].char_range, 2..4);
     }

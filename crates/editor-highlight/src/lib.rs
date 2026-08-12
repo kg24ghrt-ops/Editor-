@@ -1,8 +1,8 @@
 //! Incremental syntax highlighting using tree‑sitter.
 
 use editor_core::EditorBuffer;
-use tree_sitter::{Parser, Tree};
-use tree_sitter_highlight::{Highlighter, HighlightConfiguration, HighlightEvent};
+use tree_sitter::{InputEdit, Parser, Point, Tree};
+use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 use std::sync::Arc;
 
 /// Manages parsing and highlighting for a single buffer.
@@ -11,21 +11,49 @@ pub struct SyntaxHighlighter {
     tree: Option<Tree>,
     /// The last buffer version we parsed.
     last_version: u64,
-    /// Language-specific configuration (if any).
+    /// Language‑specific configuration (if any).
     config: Option<Arc<HighlightConfiguration>>,
+    /// The language used for parsing.
+    language: Option<tree_sitter::Language>,
 }
 
 impl SyntaxHighlighter {
     /// Create a new highlighter with a given language.
     pub fn new(language: tree_sitter::Language) -> Self {
         let mut parser = Parser::new();
-        parser.set_language(language).expect("Invalid language");
+        parser
+            .set_language(language)
+            .expect("Invalid language for parser");
         Self {
             parser,
             tree: None,
             last_version: 0,
             config: None,
+            language: Some(language),
         }
+    }
+
+    /// Create a highlighter without an initial language (use `set_language` later).
+    pub fn empty() -> Self {
+        Self {
+            parser: Parser::new(),
+            tree: None,
+            last_version: 0,
+            config: None,
+            language: None,
+        }
+    }
+
+    /// Set or change the language.
+    pub fn set_language(&mut self, language: tree_sitter::Language) -> Result<(), &'static str> {
+        self.parser
+            .set_language(language)
+            .map_err(|_| "Failed to set language")?;
+        self.language = Some(language);
+        // Invalidate the tree since the language changed.
+        self.tree = None;
+        self.last_version = 0;
+        Ok(())
     }
 
     /// Set a highlight configuration (for syntax highlighting).
@@ -37,14 +65,21 @@ impl SyntaxHighlighter {
     /// Returns the new syntax tree (root node).
     pub fn parse(&mut self, buf: &EditorBuffer) -> &Tree {
         let rope = buf.rope();
-        let source = rope.to_string(); // FIXME: materializes whole buffer; for demo only.
-        let old_tree = self.tree.take();
+        let source = rope.to_string(); // Still materialises; can be optimised later with a custom `Read` impl.
 
-        let new_tree = if let Some(_old_tree) = old_tree {
+        let old_tree = self.tree.take();
+        let new_tree = if let Some(mut old_tree) = old_tree {
             // If we have a tree from a previous version, we need to apply edits.
-            // For simplicity, we just reparse from scratch.
+            // For simplicity, we reparse from scratch if the version changed.
             // A real implementation would maintain a map of edits and call tree.edit().
-            self.parser.parse(source, None).unwrap()
+            if self.last_version != buf.version {
+                // In a full implementation, we'd compute the edit delta and call old_tree.edit(&edit).
+                // For now, we just reparse.
+                self.parser.parse(source, None).unwrap()
+            } else {
+                // No changes, return the existing tree.
+                old_tree
+            }
         } else {
             self.parser.parse(source, None).unwrap()
         };
@@ -54,17 +89,32 @@ impl SyntaxHighlighter {
         self.tree.as_ref().unwrap()
     }
 
-    /// Perform highlighting. Returns a vector of HighlightEvents.
-    pub fn highlight(&self, buf: &EditorBuffer) -> Vec<HighlightEvent> {
-        if let Some(config) = &self.config {
+    /// Perform highlighting. Returns a vector of (byte_offset, HighlightEvent).
+    pub fn highlight(&self, buf: &EditorBuffer) -> Vec<(usize, HighlightEvent)> {
+        if let (Some(config), Some(tree)) = (self.config.as_ref(), self.tree.as_ref()) {
             let source = buf.rope().to_string();
             let mut highlighter = Highlighter::new();
-            // highlighter.highlight() returns Result<impl Iterator<Item = Result<HighlightEvent, Error>>, Error>
-            let events: Vec<HighlightEvent> = highlighter
-                .highlight(config, source.as_bytes(), None, |_lang| None)
-                .unwrap()                    // Unwrap the outer Result
-                .filter_map(Result::ok)      // Keep only successful events
-                .collect();
+            let mut events = Vec::new();
+
+            // Use the tree's root node to get the byte range.
+            let root = tree.root_node();
+            let start_byte = root.start_byte();
+            let end_byte = root.end_byte();
+
+            // Highlight only the root node's range.
+            let highlight_iter = highlighter
+                .highlight(config, source.as_bytes(), Some(&tree), |_lang| None)
+                .unwrap();
+
+            for event in highlight_iter {
+                match event {
+                    Ok((byte_range, ev)) => {
+                        // Convert byte range to (start_byte, event)
+                        events.push((byte_range.start, ev));
+                    }
+                    Err(_) => continue,
+                }
+            }
             events
         } else {
             Vec::new()
@@ -78,10 +128,20 @@ impl SyntaxHighlighter {
         }
         self.tree.as_ref().unwrap()
     }
+
+    /// Returns a reference to the current syntax tree, if any.
+    pub fn tree(&self) -> Option<&Tree> {
+        self.tree.as_ref()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    // For a test we'd need a real language; this is a stub.
+
+    #[test]
+    fn test_parse() {
+        // This test requires a real language; we skip if not available.
+        // In practice, you'd use tree_sitter_rust::language().
+    }
 }

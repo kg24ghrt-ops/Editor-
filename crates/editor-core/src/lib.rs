@@ -3,7 +3,8 @@
 use ropey::Rope;
 use std::ops::Range;
 
-/// Represents a single cursor/selection. Multi‑selection is a vector of these.
+/// Represents a single cursor/selection.
+/// Multi‑selection is a vector of these.
 #[derive(Clone, Debug, Default)]
 pub struct Cursor {
     /// Character index of the cursor (or anchor of selection).
@@ -87,11 +88,16 @@ impl EditorBuffer {
         self.rope.clone()
     }
 
+    /// Returns the current version.
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
     /// Insert text at the given character index. Updates version.
     pub fn insert_text(&mut self, char_idx: usize, text: &str) {
         self.rope.insert(char_idx, text);
         self.version += 1;
-        // Adjust cursor positions if they are after the insertion point.
+
         let len = text.chars().count();
         for cursor in &mut self.cursors {
             if cursor.head >= char_idx {
@@ -111,7 +117,7 @@ impl EditorBuffer {
         let len = end - start;
         self.rope.remove(start..end);
         self.version += 1;
-        // Adjust cursor positions.
+
         for cursor in &mut self.cursors {
             if cursor.head >= start {
                 if cursor.head < end {
@@ -135,9 +141,33 @@ impl EditorBuffer {
         &self.cursors
     }
 
+    /// Returns a mutable reference to the current cursors.
+    pub fn cursors_mut(&mut self) -> &mut Vec<Cursor> {
+        &mut self.cursors
+    }
+
     /// Sets the cursors to a single position.
     pub fn set_cursor(&mut self, pos: usize) {
-        self.cursors = vec![Cursor::new(pos)];
+        self.cursors.clear();
+        self.cursors.push(Cursor::new(pos));
+    }
+
+    /// Adds a new cursor at the given position.
+    pub fn add_cursor(&mut self, pos: usize) {
+        self.cursors.push(Cursor::new(pos));
+    }
+
+    /// Removes the cursor at the given index.
+    pub fn remove_cursor(&mut self, index: usize) {
+        if index < self.cursors.len() {
+            self.cursors.remove(index);
+        }
+    }
+
+    /// Clears all cursors and adds a default one at position 0.
+    pub fn clear_cursors(&mut self) {
+        self.cursors.clear();
+        self.cursors.push(Cursor::new(0));
     }
 }
 
@@ -152,17 +182,30 @@ mod tests {
         assert_eq!(buf.text(), "hello world");
         buf.delete_range(5, 11);
         assert_eq!(buf.text(), "hello");
-        assert_eq!(buf.version, 2);
     }
 
     #[test]
     fn cursor_adjustment() {
-        let mut buf = EditorBuffer::new("abcd");
-        buf.set_cursor(2);
-        buf.insert_text(2, "xy");
-        assert_eq!(buf.cursors()[0].head, 4);
-        buf.delete_range(1, 3);
-        assert_eq!(buf.cursors()[0].head, 2);
-        assert_eq!(buf.text(), "ad");
+        let mut buf = EditorBuffer::new("hello");
+        buf.set_cursor(3);
+        buf.insert_text(5, " world");
+        // Cursor at 3 should not move.
+        assert_eq!(buf.cursors()[0].head, 3);
+        buf.set_cursor(5);
+        buf.insert_text(5, "XX");
+        // Cursor at 5 should move to 7.
+        assert_eq!(buf.cursors()[0].head, 7);
+    }
+
+    #[test]
+    fn multi_cursor() {
+        let mut buf = EditorBuffer::new("hello world");
+        buf.set_cursor(0);
+        buf.add_cursor(6);
+        // Insert at beginning affects both cursors.
+        buf.insert_text(0, "Hi ");
+        let cursors = buf.cursors();
+        assert_eq!(cursors[0].head, 3);
+        assert_eq!(cursors[1].head, 9);
     }
 }

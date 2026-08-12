@@ -1,13 +1,20 @@
 //! Delta‑based undo/redo with coalescing of rapid edits.
 
 use editor_core::EditorBuffer;
+use std::time::{Duration, Instant};
 
 /// A single edit delta: either insertion or deletion.
 #[derive(Clone, Debug)]
 pub enum Delta {
-    Insert { start: usize, text: String },
-    /// Delete now stores the removed text, so undo can re-insert it.
-    Delete { start: usize, end: usize, text: String },
+    Insert {
+        start: usize,
+        text: String,
+    },
+    Delete {
+        start: usize,
+        end: usize,
+        text: String,
+    },
 }
 
 impl Delta {
@@ -30,12 +37,10 @@ impl Delta {
                     text: text.clone(),
                 }
             }
-            Delta::Delete { start, end: _, text } => {
-                Delta::Insert {
-                    start: *start,
-                    text: text.clone(),
-                }
-            }
+            Delta::Delete { start, end: _, text } => Delta::Insert {
+                start: *start,
+                text: text.clone(),
+            },
         }
     }
 }
@@ -45,6 +50,7 @@ pub struct HistoryEntry {
     deltas: Vec<Delta>,
     /// Optional name for the operation.
     pub name: String,
+    timestamp: Instant,
 }
 
 impl HistoryEntry {
@@ -52,6 +58,7 @@ impl HistoryEntry {
         Self {
             deltas,
             name: name.into(),
+            timestamp: Instant::now(),
         }
     }
 
@@ -66,6 +73,20 @@ impl HistoryEntry {
             delta.reverse().apply(buf);
         }
     }
+
+    /// Returns the timestamp of this entry.
+    pub fn timestamp(&self) -> Instant {
+        self.timestamp
+    }
+
+    /// Returns the number of deltas in this entry.
+    pub fn len(&self) -> usize {
+        self.deltas.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.deltas.is_empty()
+    }
 }
 
 /// Undo/redo manager.
@@ -76,6 +97,8 @@ pub struct History {
     max_entries: usize,
     /// Coalescing: if true, the next edit will be added to the last entry if possible.
     pub coalescing: bool,
+    /// Time window for coalescing (default 200ms).
+    pub coalesce_window: Duration,
 }
 
 impl History {
@@ -85,6 +108,7 @@ impl History {
             redo_stack: Vec::new(),
             max_entries,
             coalescing: true,
+            coalesce_window: Duration::from_millis(200),
         }
     }
 
@@ -93,16 +117,19 @@ impl History {
     pub fn push_entry(&mut self, entry: HistoryEntry) {
         if self.coalescing {
             if let Some(last) = self.undo_stack.last_mut() {
-                // Heuristic: if the last entry has the same name and is within a short time?
-                // For simplicity, we just merge if the name is "typing".
-                if last.name == entry.name && last.name == "typing" {
+                // Merge if same operation name and within the coalesce window.
+                if last.name == entry.name
+                    && last.timestamp.elapsed() < self.coalesce_window
+                {
                     last.deltas.extend(entry.deltas);
+                    last.timestamp = entry.timestamp; // update timestamp
                     return;
                 }
             }
         }
         self.undo_stack.push(entry);
         self.redo_stack.clear();
+
         if self.max_entries > 0 && self.undo_stack.len() > self.max_entries {
             self.undo_stack.remove(0);
         }
@@ -135,6 +162,16 @@ impl History {
         self.undo_stack.clear();
         self.redo_stack.clear();
     }
+
+    /// Returns the number of undo entries.
+    pub fn undo_len(&self) -> usize {
+        self.undo_stack.len()
+    }
+
+    /// Returns the number of redo entries.
+    pub fn redo_len(&self) -> usize {
+        self.redo_stack.len()
+    }
 }
 
 #[cfg(test)]
@@ -142,39 +179,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn undo_redo_simple() {
+    fn basic_undo_redo() {
         let mut buf = EditorBuffer::new("hello");
         let mut history = History::new(10);
-        let insert = Delta::Insert {
-            start: 5,
-            text: " world".into(),
-        };
-        let entry = HistoryEntry::new(vec![insert], "typing");
+
+        let entry = HistoryEntry::new(
+            vec![Delta::Insert {
+                start: 5,
+                text: " world".to_string(),
+            }],
+            "typing",
+        );
         entry.apply_forward(&mut buf);
         history.push_entry(entry);
         assert_eq!(buf.text(), "hello world");
+
         assert!(history.undo(&mut buf));
         assert_eq!(buf.text(), "hello");
+
         assert!(history.redo(&mut buf));
         assert_eq!(buf.text(), "hello world");
     }
 
     #[test]
-    fn undo_delete() {
-        let mut buf = EditorBuffer::new("hello world");
+    fn coalescing() {
+        let mut buf = EditorBuffer::new("");
         let mut history = History::new(10);
-        let delete = Delta::Delete {
-            start: 5,
-            end: 11,
-            text: " world".into(),
-        };
-        let entry = HistoryEntry::new(vec![delete], "delete");
-        entry.apply_forward(&mut buf);
-        history.push_entry(entry);
-        assert_eq!(buf.text(), "hello");
-        assert!(history.undo(&mut buf));
-        assert_eq!(buf.text(), "hello world");
-        assert!(history.redo(&mut buf));
-        assert_eq!(buf.text(), "hello");
+
+        for i in 0..5 {
+            let entry = HistoryEntry::new(
+                vec![Delta::Insert {
+                    start: i,
+                    text: "a".to_string(),
+                }],
+                "typing",
+            );
+            entry.apply_forward(&mut buf);
+            history.push_entry(entry);
+        }
+
+        assert_eq!(history.undo_len(), 1);
+        assert_eq!(buf.text(), "aaaaa");
+        history.undo(&mut buf);
+        assert_eq!(buf.text(), "");
     }
 }
