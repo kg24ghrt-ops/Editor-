@@ -20,5 +20,5 @@ crossbeam-channel = "0.5.0"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["kyaw Thiha1]
+authors = ["kyaw Thiha"]
 license = "Apache-2.0"
