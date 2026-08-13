@@ -1,4 +1,5 @@
 //! Fold regions derived from the syntax tree.
+
 use editor_core::EditorBuffer;
 use tree_sitter::{Node, Query, QueryCursor, Tree};
 use std::ops::Range;
@@ -18,7 +19,6 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
     let language = root.language();
 
     // Define a query for foldable nodes.
-    // This is a simple query; for production you'd want a more comprehensive one.
     let query_source = r#"
         (block) @fold
         (function_definition) @fold
@@ -31,9 +31,9 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
     let query = Query::new(language, query_source).unwrap();
     let mut cursor = QueryCursor::new();
 
-    // FIX: Get source text from the buffer as bytes
-    let source = buf.rope().to_string();
-    let source_bytes = source.as_bytes();
+    // Get source text from the buffer as bytes.
+    let source_text = buf.rope().to_string();
+    let source_bytes = source_text.as_bytes();
 
     let matches = cursor.matches(&query, root, source_bytes);
     let rope = buf.rope();
@@ -49,7 +49,7 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
 
             if end_char > start_char + 1 {
                 let label = if node.kind() == "function_definition" {
-                    extract_function_name(&node)
+                    extract_function_name(&node, source_bytes)
                 } else {
                     node.kind().to_string()
                 };
@@ -63,7 +63,7 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
 
     // Remove overlapping regions (keep the outermost).
     regions.sort_by_key(|r| r.range.start);
-    let mut filtered = Vec::new();
+    let mut filtered: Vec<FoldRegion> = Vec::new();
     for region in regions {
         if let Some(last) = filtered.last() {
             if region.range.start < last.range.end {
@@ -78,13 +78,12 @@ pub fn fold_regions_from_tree(tree: &Tree, buf: &EditorBuffer) -> Vec<FoldRegion
 }
 
 /// Attempt to extract the function name from a function_definition node.
-fn extract_function_name(node: &Node) -> String {
+fn extract_function_name(node: &Node, source: &[u8]) -> String {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier" {
-            // FIX: node.language() returns Language directly, no unwrap needed
             return child
-                .utf8_text(&node.language())
+                .utf8_text(source)
                 .unwrap_or("function")
                 .to_string();
         }
