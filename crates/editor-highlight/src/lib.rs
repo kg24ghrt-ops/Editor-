@@ -89,14 +89,14 @@ impl SyntaxHighlighter {
         self.tree.as_ref().unwrap()
     }
 
-    /// Perform highlighting. Returns a vector of (byte_offset, HighlightEvent).
-    pub fn highlight(&self, buf: &EditorBuffer) -> Vec<(usize, HighlightEvent)> {
+    /// Perform highlighting. Returns a vector of HighlightEvent.
+    pub fn highlight(&self, buf: &EditorBuffer) -> Vec<HighlightEvent> {
         if let (Some(config), Some(_tree)) = (self.config.as_ref(), self.tree.as_ref()) {
             let source = buf.rope().to_string();
             let mut highlighter = Highlighter::new();
             let mut events = Vec::new();
 
-            // FIX: Pass None for cancellation_flag (no timeout).
+            // Pass None for cancellation_flag (no timeout).
             // The tree is NOT passed here – the highlighter uses its own parser.
             let highlight_iter = highlighter
                 .highlight(config, source.as_bytes(), None, |_lang| None)
@@ -104,20 +104,7 @@ impl SyntaxHighlighter {
 
             for event in highlight_iter {
                 match event {
-                    Ok(HighlightEvent::Source { start, end: _ }) => {
-                        // Source events carry the byte range of the text being highlighted.
-                        // We store the start offset along with the event.
-                        events.push((start, HighlightEvent::Source { start, end: _ }));
-                    }
-                    Ok(ev @ HighlightEvent::HighlightStart(_)) => {
-                        // For HighlightStart, we need to know where it applies.
-                        // In this simplified version, we just store a dummy offset (0).
-                        // A real implementation would track the current byte offset.
-                        events.push((0, ev));
-                    }
-                    Ok(ev @ HighlightEvent::HighlightEnd) => {
-                        events.push((0, ev));
-                    }
+                    Ok(ev) => events.push(ev),
                     Err(_) => continue,
                 }
             }
